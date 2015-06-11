@@ -1,0 +1,12 @@
+Simple Stupid file & device shredder
+
+Derived from tfcrypt with idea of using threefish for fast shredding
+Build without -DSHRED_FAST64 if you want read bytes always from urandom
+(with SHRED_FAST64, urandom used only for dice and once for key seeding)
+
+I found this tool useful, but it existed only in gnu coreutils, and nowhere. Busybox also misses it, but I did not
+wanted to install coreutils on my musl sane systems, so I needed one and decided to write my own quickly.
+
+Do not expect it to be clean, fast and bug-free. It just works for me. Code is ugly.
+
+Public domain
