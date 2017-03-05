@@ -15,7 +15,7 @@
 
 #ifdef SHRED_FAST64
 #include <time.h>
-#include "tfskein1024.c"
+#include "tf1024.h"
 #endif
 
 static char *progname;
@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 	int c, f, rsf;
 #ifdef SHRED_FAST64
 	tf1024_ctx tctx; memset(&tctx, 0, sizeof(tf1024_ctx));
-	unsigned char keybuf[128], nonce[128];
+	unsigned char keybuf[128], counter[128];
 #endif
 	int xret = 0, pat = 0, last = 0, special = 0, it = 0;
 	size_t blksz = 0, x, y;
@@ -111,20 +111,20 @@ int main(int argc, char **argv)
 		buf = malloc(blksz);
 		if (!buf) {
 			perror("malloc"); XRET(2);
-			fprintf(stderr, "Continuing with fixed buffer (%lu bytes long)\n", sizeof(sfbuf));
+			fprintf(stderr, "Continuing with fixed buffer (%zu bytes long)\n", sizeof(sfbuf));
 			buf = sfbuf; blksz = sizeof(sfbuf);
 		}
 		memset(buf, 0, blksz);
 
 #ifdef SHRED_FAST64
-		if (read(rsf, buf, blksz) <= 0) fprintf(stderr, "%s: read 0 bytes (wanted %lu)\n", randsrc, blksz);
+		if (read(rsf, buf, blksz) <= 0) fprintf(stderr, "%s: read 0 bytes (wanted %zu)\n", randsrc, blksz);
 		sk1024(buf, blksz, keybuf, 1024);
 		tf1024_init(&tctx);
 		tf1024_set_key(&tctx, keybuf, 1024);
-		sk1024(keybuf, sizeof(keybuf), nonce, 1024);
-		tf1024_set_nonce(&tctx, nonce, 0);
+		sk1024(keybuf, sizeof(keybuf), counter, 1024);
+		tf1024_start_counter(&tctx, counter);
 		memset(keybuf, 0, 128);
-		memset(nonce, 0, sizeof(nonce));
+		memset(counter, 0, sizeof(counter));
 #endif
 
 		while (it) {

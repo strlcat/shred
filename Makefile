@@ -1,9 +1,15 @@
-CFLAGS=-Wall -O2 -DSHRED_FAST64 -D_LARGEFILE64_SOURCE
+override CFLAGS=-Wall -O2 -DSHRED_FAST64 -DTF_FAST -D_LARGEFILE64_SOURCE
+
+SRCS = $(wildcard *.c)
+OBJS = $(SRCS:.c=.o)
 
 all: shred
 
-shred: shred.o shred.c
-	$(CC) $(CFLAGS) $(LDFLAGS) shred.o -o shred
+%: %.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+shred: $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@
 
 clean:
 	rm -f *.o shred
