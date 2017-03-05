@@ -1,12 +1,19 @@
-Simple Stupid file & device shredder
+simple file and device shredder - very lightweight gnu shred alternative
 
-Derived from tfcrypt with idea of using threefish for fast shredding
-Build without -DSHRED_FAST64 if you want read bytes always from urandom
-(with SHRED_FAST64, urandom used only for dice and once for key seeding)
+forked from tfcrypt with idea of using Threefish for fast shredding.
 
-I found this tool useful, but it existed only in gnu coreutils, and nowhere. Busybox also misses it, but I did not
-wanted to install coreutils on my musl sane systems, so I needed one and decided to write my own quickly.
+I found this tool useful even before, but it existed only in gnu coreutils, and nowhere else.
+Busybox also missed it, but I did not wanted to install coreutils on my musl sane systems,
+but I was in a need for one and decided to write my own quickly.
 
-Do not expect it to be clean, fast and bug-free. It just works for me. Code is ugly.
+It was used for more that three years and it proven to be stable enough.
 
-Public domain
+BUGS:
+- force option (-f) cannot force to overwrite _existing_ file if user does not own it, but
+owns the directory where it resides. This is because common Unix systems lack a sane
+way to transfer ownership of such files to user who owns directory. There is no fix for that.
+
+LICENSE:
+- Public domain code.
+
+-- ElectroRys, 05Mar2017.
