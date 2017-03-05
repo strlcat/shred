@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 	int c, f, rsf;
 #ifdef SHRED_FAST64
 	tf1024_ctx tctx; memset(&tctx, 0, sizeof(tf1024_ctx));
-	unsigned char keybuf[128], counter[128];
+	unsigned char keybuf[TF_KEY_SIZE], counter[TF_KEY_SIZE];
 #endif
 	int xret = 0, pat = 0, last = 0, special = 0, it = 0;
 	size_t blksz = 0, x, y;
@@ -123,8 +123,8 @@ int main(int argc, char **argv)
 		tf1024_set_key(&tctx, keybuf, 1024);
 		sk1024(keybuf, sizeof(keybuf), counter, 1024);
 		tf1024_start_counter(&tctx, counter);
-		memset(keybuf, 0, 128);
-		memset(counter, 0, sizeof(counter));
+		memset(keybuf, 0, TF_KEY_SIZE);
+		memset(counter, 0, TF_KEY_SIZE);
 #endif
 
 		while (it) {
