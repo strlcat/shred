@@ -11,6 +11,10 @@
 #define TF_BLOCK_SIZE TF_KEY_SIZE /* for byteops - memset, memcpy etc. */
 #define TF_BLOCK_UNITS TF_NR_UNITS /* for uint64_t ops */
 
+#define TF_TO_BITS(x)   ((x) * TF_SIZE_UNIT) /* nr. bytes to bits (128 -> 1024) */
+#define TF_FROM_BITS(x) ((x) / TF_SIZE_UNIT) /* nr. bits to bytes (1024 -> 128) */
+#define TF_MAX_BITS (TF_BLOCK_SIZE * TF_SIZE_UNIT) /* max. bits supported (128 * 8 == 1024) */
+
 typedef struct {
 	uint64_t K[TF_NR_UNITS+1];
 	uint64_t T[3];

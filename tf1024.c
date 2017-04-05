@@ -7,7 +7,7 @@
 #include <endian.h>
 #include "tf1024.h"
 
-static inline void inc64(uint64_t *x, size_t l)
+static inline void inc1024(uint64_t *x, size_t l)
 {
 	size_t i;
 
@@ -17,7 +17,7 @@ static inline void inc64(uint64_t *x, size_t l)
 	}
 }
 
-static inline void add64(uint64_t *x, const uint64_t *y, size_t l)
+static inline void add1024(uint64_t *x, const uint64_t *y, size_t l)
 {
 	size_t i, f = 0;
 	uint64_t t;
@@ -152,7 +152,7 @@ void tf1024_start_counter(tf1024_ctx *ctx, const void *ctr)
 void tf1024_rewind_counter(tf1024_ctx *ctx, const void *newctr, size_t ctrsz)
 {
 	memcpy(ctx->ctr, ctx->ictr, sizeof(ctx->ctr));
-	if (newctr && ctrsz) add64(ctx->ctr, newctr, ctrsz);
+	if (newctr && ctrsz) add1024(ctx->ctr, newctr, ctrsz);
 }
 
 /* CTR mode threefish */
@@ -170,7 +170,7 @@ void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 			data_to_le64(x, TF_BLOCK_SIZE);
 
 			/* Adjust counter, process data */
-			inc64(ctx->ctr, TF_BLOCK_UNITS);
+			inc1024(ctx->ctr, TF_BLOCK_UNITS);
 			tf1024_encrypt_blk(ctx, ctx->ctr, y);
 			for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
 
@@ -186,7 +186,7 @@ void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 		memcpy(x, usrc, sl);
 		data_to_le64(x, TF_BLOCK_SIZE);
 
-		inc64(ctx->ctr, TF_BLOCK_UNITS);
+		inc1024(ctx->ctr, TF_BLOCK_UNITS);
 		tf1024_encrypt_blk(ctx, ctx->ctr, y);
 		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
 
