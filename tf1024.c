@@ -7,7 +7,7 @@
 #include <endian.h>
 #include "tf1024.h"
 
-static inline void inc1024(uint64_t *x, size_t l)
+static inline void ctr_inc(uint64_t *x, size_t l)
 {
 	size_t i;
 
@@ -17,7 +17,7 @@ static inline void inc1024(uint64_t *x, size_t l)
 	}
 }
 
-static inline void add1024(uint64_t *x, const uint64_t *y, size_t l)
+static inline void ctr_add(uint64_t *x, const uint64_t *y, size_t l)
 {
 	size_t i, f = 0;
 	uint64_t t;
@@ -49,7 +49,7 @@ static inline void data_to_le64(void *p, size_t l)
 
 #define THREEFISH_PARITY 0x1bd11bdaa9fc1a22ULL
 
-static void tfs1024_init(tf1024_ctx *ctx)
+static void tfs1024_init(tfs1024_ctx *ctx)
 {
 	size_t i;
 
@@ -77,7 +77,7 @@ static const uint8_t rot1024[] = {
 	31, 44, 47, 46, 19, 42, 44, 25, 9, 48, 35, 52, 23, 31, 37, 20
 };
 
-static void tf1024_encrypt_blk(tf1024_ctx *ctx, const uint64_t *in, uint64_t *out)
+static void tf1024_encrypt_blk(tfs1024_ctx *ctx, const uint64_t *in, uint64_t *out)
 {
 	size_t i, r, s, a, b;
 
@@ -105,6 +105,7 @@ static void tf1024_encrypt_blk(tf1024_ctx *ctx, const uint64_t *in, uint64_t *ou
 }
 #endif /* !TF_FAST */
 
+#ifdef TF_NEED_THREEFISH
 void tf1024_init(tf1024_ctx *ctx)
 {
 	memset(ctx, 0, sizeof(tf1024_ctx));
@@ -122,37 +123,44 @@ void tf1024_set_key(tf1024_ctx *ctx, const void *key, size_t klen)
 
 	if (klen > TF_KEY_SIZE) return;
 
-	memcpy(ctx->K, key, klen); memset((uint8_t *)ctx->K+klen, 0, TF_KEY_SIZE-klen);
-	data_to_le64(ctx->K, sizeof(ctx->K));
+	memcpy(ctx->tfs.K, key, klen);
+	memset((uint8_t *)ctx->tfs.K+klen, 0, TF_KEY_SIZE-klen);
+	data_to_le64(ctx->tfs.K, sizeof(ctx->tfs.K));
 
-	for (i = 0; i < TF_NR_UNITS; i++) parity ^= ctx->K[i];
-	ctx->K[i] = parity;
+	for (i = 0; i < TF_NR_UNITS; i++) parity ^= ctx->tfs.K[i];
+	ctx->tfs.K[i] = parity;
 }
 
 void tf1024_set_tweak(tf1024_ctx *ctx, const void *tweak)
 {
 	const uint64_t *tw = tweak;
 
-	ctx->T[0] = tw[0];
-	ctx->T[1] = tw[1];
-	data_to_le64(ctx->T, sizeof(ctx->T));
+	ctx->tfs.T[0] = tw[0];
+	ctx->tfs.T[1] = tw[1];
+	data_to_le64(ctx->tfs.T, sizeof(ctx->tfs.T));
 
-	ctx->T[2] = ctx->T[0] ^ ctx->T[1];
+	ctx->tfs.T[2] = ctx->tfs.T[0] ^ ctx->tfs.T[1];
 }
 
 void tf1024_start_counter(tf1024_ctx *ctx, const void *ctr)
 {
+#ifdef TF_NEED_CTR_BACKUP
 	memcpy(ctx->ictr, ctr, sizeof(ctx->ictr));
+#endif
 	memcpy(ctx->ctr, ctr, sizeof(ctx->ctr));
 
-	data_to_le64(ctx->ctr, sizeof(ctx->ctr));
+#ifdef TF_NEED_CTR_BACKUP
 	data_to_le64(ctx->ictr, sizeof(ctx->ictr));
+#endif
+	data_to_le64(ctx->ctr, sizeof(ctx->ctr));
 }
 
 void tf1024_rewind_counter(tf1024_ctx *ctx, const void *newctr, size_t ctrsz)
 {
+#ifdef TF_NEED_CTR_BACKUP
 	memcpy(ctx->ctr, ctx->ictr, sizeof(ctx->ctr));
-	if (newctr && ctrsz) add1024(ctx->ctr, newctr, ctrsz);
+#endif
+	if (newctr && ctrsz) ctr_add(ctx->ctr, newctr, ctrsz);
 }
 
 /* CTR mode threefish */
@@ -166,17 +174,19 @@ void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 	if (sl > TF_BLOCK_SIZE) {
 		do {
 			/* Load src data, convert to LE if necessary */
-			memcpy(x, usrc, TF_BLOCK_SIZE); usrc += TF_BLOCK_SIZE;
+			memcpy(x, usrc, TF_BLOCK_SIZE);
+			usrc += TF_BLOCK_SIZE;
 			data_to_le64(x, TF_BLOCK_SIZE);
 
 			/* Adjust counter, process data */
-			inc1024(ctx->ctr, TF_BLOCK_UNITS);
-			tf1024_encrypt_blk(ctx, ctx->ctr, y);
+			ctr_inc(ctx->ctr, TF_BLOCK_UNITS);
+			tf1024_encrypt_blk(&ctx->tfs, ctx->ctr, y);
 			for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
 
 			/* Convert from LE if necessary, store result data */
 			data_to_le64(y, sizeof(y));
-			memcpy(udst, y, TF_BLOCK_SIZE); udst += TF_BLOCK_SIZE;
+			memcpy(udst, y, TF_BLOCK_SIZE);
+			udst += TF_BLOCK_SIZE;
 		} while ((sl -= TF_BLOCK_SIZE) >= TF_BLOCK_SIZE);
 	}
 
@@ -186,14 +196,15 @@ void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 		memcpy(x, usrc, sl);
 		data_to_le64(x, TF_BLOCK_SIZE);
 
-		inc1024(ctx->ctr, TF_BLOCK_UNITS);
-		tf1024_encrypt_blk(ctx, ctx->ctr, y);
+		ctr_inc(ctx->ctr, TF_BLOCK_UNITS);
+		tf1024_encrypt_blk(&ctx->tfs, ctx->ctr, y);
 		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
 
 		data_to_le64(y, TF_BLOCK_SIZE);
 		memcpy(udst, y, sl);
 	}
 }
+#endif /* TF_NEED_THREEFISH */
 
 #define SKEIN_VERSION 1
 #define SKEIN_ID 0x33414853 /* LE: "SHA3" */
@@ -234,17 +245,17 @@ static void sk1024_process_blk(sk1024_ctx *ctx, const uint8_t *in, size_t bnum, 
 	size_t i;
 
 	do {
-		ctx->tf.T[0] += l;
+		ctx->tfs.T[0] += l;
 
 		skget64lsb(x, in, tf_units(x));
 		in += sizeof(x);
 
-		tfs1024_init(&ctx->tf);
-		tf1024_encrypt_blk(&ctx->tf, x, y);
+		tfs1024_init(&ctx->tfs);
+		tf1024_encrypt_blk(&ctx->tfs, x, y);
 		for (i = 0; i < TF_BLOCK_UNITS; i++)
-			ctx->tf.K[i] = y[i] ^ x[i];
+			ctx->tfs.K[i] = y[i] ^ x[i];
 
-		ctx->tf.T[1] &= ~SKEIN_FLAG_FIRST;
+		ctx->tfs.T[1] &= ~SKEIN_FLAG_FIRST;
 	} while (--bnum);
 }
 
@@ -259,14 +270,14 @@ void sk1024_init(sk1024_ctx *ctx, size_t hbits)
 	cfg[0] = htole64(((uint64_t) SKEIN_VERSION << 32) + SKEIN_ID);
 	cfg[1] = htole64(hbits);
 
-	ctx->tf.T[0] = 0;
-	ctx->tf.T[1] = SKEIN_BLOCK_CFG | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
+	ctx->tfs.T[0] = 0;
+	ctx->tfs.T[1] = SKEIN_BLOCK_CFG | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
 
-	memset(ctx->tf.K, 0, sizeof(ctx->tf.K));
+	memset(ctx->tfs.K, 0, sizeof(ctx->tfs.K));
 	sk1024_process_blk(ctx, (uint8_t *)cfg, 1, 32);
 
-	ctx->tf.T[0] = 0;
-	ctx->tf.T[1] = SKEIN_BLOCK_MSG | SKEIN_FLAG_FIRST;
+	ctx->tfs.T[0] = 0;
+	ctx->tfs.T[1] = SKEIN_BLOCK_MSG | SKEIN_FLAG_FIRST;
 }
 
 void sk1024_update(sk1024_ctx *ctx, const void *msg, size_t l)
@@ -309,31 +320,32 @@ void sk1024_final(sk1024_ctx *ctx, void *outhash)
 
 	if (ctx->bl < TF_BLOCK_SIZE)
 		memset(ctx->B + ctx->bl, 0, TF_BLOCK_SIZE - ctx->bl);
-	ctx->tf.T[1] |= SKEIN_FLAG_LAST;
+	ctx->tfs.T[1] |= SKEIN_FLAG_LAST;
 	sk1024_process_blk(ctx, ctx->B, 1, ctx->bl);
 
 	b = (ctx->hl + 7) / 8;
 
 	memset(ctx->B, 0, sizeof(ctx->B));
-	memcpy(key, ctx->tf.K, sizeof(key));
+	memcpy(key, ctx->tfs.K, sizeof(key));
 
 	for (i = 0; i * TF_BLOCK_SIZE < b; i++) {
 		((uint64_t *)ctx->B)[0] = htole64((uint64_t)i);
-		ctx->tf.T[0] = 0;
-		ctx->tf.T[1] = SKEIN_BLOCK_OUT | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
+		ctx->tfs.T[0] = 0;
+		ctx->tfs.T[1] = SKEIN_BLOCK_OUT | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
 		ctx->bl = 0;
 
 		sk1024_process_blk(ctx, ctx->B, 1, sizeof(uint64_t));
 		n = b - i*TF_BLOCK_SIZE;
 		if (n >= TF_BLOCK_SIZE) n = TF_BLOCK_SIZE;
-		skput64lsb(hash+i*TF_BLOCK_SIZE, ctx->tf.K, n);
-		memcpy(ctx->tf.K, key, sizeof(key));
+		skput64lsb(hash+i*TF_BLOCK_SIZE, ctx->tfs.K, n);
+		memcpy(ctx->tfs.K, key, sizeof(key));
 	}
 }
 
 void sk1024(const void *src, size_t slen, void *dst, size_t hbits)
 {
-	sk1024_ctx ctx; memset(&ctx, 0, sizeof(sk1024_ctx));
+	sk1024_ctx ctx;
+	memset(&ctx, 0, sizeof(sk1024_ctx));
 
 	sk1024_init(&ctx, hbits);
 	sk1024_update(&ctx, src, slen);

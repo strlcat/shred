@@ -1,4 +1,4 @@
-static void tf1024_encrypt_blk(tf1024_ctx *ctx, const uint64_t *input, uint64_t *output)
+static void tf1024_encrypt_blk(tfs1024_ctx *ctx, const uint64_t *input, uint64_t *output)
 {
 	uint64_t b0 = input[0], b1 = input[1],
 		b2 = input[2], b3 = input[3],
