@@ -2,54 +2,12 @@
  * Embeddable skein and threefish implementation, 1024 bits only
  */
 
-#include <stdint.h>
 #include <string.h>
-#include <endian.h>
 #include "tf1024.h"
-
-static inline void ctr_inc(uint64_t *x, size_t l)
-{
-	size_t i;
-
-	for (i = 0; i < l; i++) {
-		x[i] = ((x[i] + (uint64_t)1) & ((uint64_t)~0));
-		if (x[i]) break;
-	}
-}
-
-static inline void ctr_add(uint64_t *x, const uint64_t *y, size_t l)
-{
-	size_t i, f = 0;
-	uint64_t t;
-
-	for (i = 0; i < l; i++) {
-		t = x[i];
-		x[i] += y[i]; x[i] &= ((uint64_t)~0);
-		if (x[i] < t) {
-_again:			f++;
-			t = x[f-i];
-			x[f-i]++;
-			if (x[f-i] < t) goto _again;
-			else f = 0;
-		}
-	}
-}
-
-static inline void data_to_le64(void *p, size_t l)
-{
-	size_t idx;
-	uint64_t *P = (uint64_t *)p;
-	uint64_t t;
-
-	for (idx = 0; idx < (l/sizeof(uint64_t)); idx++) {
-		t = htole64(P[idx]);
-		P[idx] = t;
-	}
-}
 
 #define THREEFISH_PARITY 0x1bd11bdaa9fc1a22ULL
 
-static void tfs1024_init(tfs1024_ctx *ctx)
+static void tf1024_init_for_skein(tfc1024_ctx *ctx)
 {
 	size_t i;
 
@@ -60,52 +18,45 @@ static void tfs1024_init(tfs1024_ctx *ctx)
 	ctx->T[2] = ctx->T[0] ^ ctx->T[1];
 }
 
-#ifdef TF_FAST
-#include "fastfish.h"
-#else
-static const uint8_t sched1024[] = {
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-	0, 9, 2, 13, 6, 11, 4, 15, 10, 7, 12, 3, 14, 5, 8, 1,
-	0, 7, 2, 5, 4, 3, 6, 1, 12, 15, 14, 13, 8, 11, 10, 9,
-	0, 15, 2, 11, 6, 13, 4, 9, 14, 1, 8, 5, 10, 3, 12, 7
-};
-
-static const uint8_t rot1024[] = {
-	24, 13, 8, 47, 8, 17, 22, 37, 38, 19, 10, 55, 49, 18, 23, 52,
-	33, 4, 51, 13, 34, 41, 59, 17, 5, 20, 48, 41, 47, 28, 16, 25,
-	41, 9, 37, 31, 12, 47, 44, 30, 16, 34, 56, 51, 4, 53, 42, 41,
-	31, 44, 47, 46, 19, 42, 44, 25, 9, 48, 35, 52, 23, 31, 37, 20
-};
-
-static void tf1024_encrypt_blk(tfs1024_ctx *ctx, const uint64_t *in, uint64_t *out)
+#ifdef TF_NEED_CORE
+void tfc1024_init(tfc1024_ctx *ctx)
 {
-	size_t i, r, s, a, b;
-
-	for (i = 0; i < TF_NR_UNITS; i++)
-		out[i] = ctx->K[i] + in[i];
-	out[13] += ctx->T[0];
-	out[14] += ctx->T[1];
-
-	for (r = 1, s = 0; r <= 20; r++, s ^= tf_units(rot1024)/2) {
-		for (i = 0; i < tf_units(sched1024)/2; i++) {
-			a = sched1024[i*2];
-			b = sched1024[i*2+1];
-
-			out[a] += out[b];
-			out[b] = (out[b] << rot1024[i+s]) | (out[b] >> (64 - rot1024[i+s]));
-			out[b] ^= out[a];
-		}
-
-		for (i = 0; i < TF_NR_UNITS; i++)
-			out[i] += ctx->K[(r+i) % tf_units(ctx->K)];
-		out[13] += ctx->T[r % tf_units(ctx->T)];
-		out[14] += ctx->T[(r+1) % tf_units(ctx->T)];
-		out[15] += r;
-	}
+	memset(ctx, 0, sizeof(tfc1024_ctx));
 }
-#endif /* !TF_FAST */
 
-#ifdef TF_NEED_THREEFISH
+void tfc1024_done(tfc1024_ctx *ctx)
+{
+	memset(ctx, 0, sizeof(tfc1024_ctx));
+}
+
+void tfc1024_set_key(tfc1024_ctx *ctx, const void *key, size_t klen)
+{
+	uint64_t parity = THREEFISH_PARITY;
+	int i;
+
+	if (klen > TF_KEY_SIZE) return;
+
+	memcpy(ctx->K, key, klen);
+	memset((uint8_t *)ctx->K+klen, 0, TF_KEY_SIZE-klen);
+	data_to_le64(ctx->K, sizeof(ctx->K));
+
+	for (i = 0; i < TF_NR_UNITS; i++) parity ^= ctx->K[i];
+	ctx->K[i] = parity;
+}
+
+void tfc1024_set_tweak(tfc1024_ctx *ctx, const void *tweak)
+{
+	const uint64_t *tw = tweak;
+
+	ctx->T[0] = tw[0];
+	ctx->T[1] = tw[1];
+	data_to_le64(ctx->T, sizeof(ctx->T));
+
+	ctx->T[2] = ctx->T[0] ^ ctx->T[1];
+}
+#endif
+
+#ifdef TF_NEED_MODES
 void tf1024_init(tf1024_ctx *ctx)
 {
 	memset(ctx, 0, sizeof(tf1024_ctx));
@@ -114,32 +65,6 @@ void tf1024_init(tf1024_ctx *ctx)
 void tf1024_done(tf1024_ctx *ctx)
 {
 	memset(ctx, 0, sizeof(tf1024_ctx));
-}
-
-void tf1024_set_key(tf1024_ctx *ctx, const void *key, size_t klen)
-{
-	uint64_t parity = THREEFISH_PARITY;
-	int i;
-
-	if (klen > TF_KEY_SIZE) return;
-
-	memcpy(ctx->tfs.K, key, klen);
-	memset((uint8_t *)ctx->tfs.K+klen, 0, TF_KEY_SIZE-klen);
-	data_to_le64(ctx->tfs.K, sizeof(ctx->tfs.K));
-
-	for (i = 0; i < TF_NR_UNITS; i++) parity ^= ctx->tfs.K[i];
-	ctx->tfs.K[i] = parity;
-}
-
-void tf1024_set_tweak(tf1024_ctx *ctx, const void *tweak)
-{
-	const uint64_t *tw = tweak;
-
-	ctx->tfs.T[0] = tw[0];
-	ctx->tfs.T[1] = tw[1];
-	data_to_le64(ctx->tfs.T, sizeof(ctx->tfs.T));
-
-	ctx->tfs.T[2] = ctx->tfs.T[0] ^ ctx->tfs.T[1];
 }
 
 void tf1024_start_counter(tf1024_ctx *ctx, const void *ctr)
@@ -160,9 +85,30 @@ void tf1024_rewind_counter(tf1024_ctx *ctx, const void *newctr, size_t ctrsz)
 #ifdef TF_NEED_CTR_BACKUP
 	memcpy(ctx->ctr, ctx->ictr, sizeof(ctx->ctr));
 #endif
-	if (newctr && ctrsz) ctr_add(ctx->ctr, newctr, ctrsz);
+	if (newctr && ctrsz) ctr_add(ctx->ctr, newctr, ctrsz > tf_units(ctx->ctr)
+		? tf_units(ctx->ctr) : ctrsz);
 }
 
+#ifdef TF_NEED_TCTR_MODE
+void tf1024_start_counter_tctr(tfc1024_ctx *ctx, const void *ctr)
+{
+	tfc1024_set_tweak(ctx, ctr);
+#ifdef TF_NEED_CTR_BACKUP
+	memcpy(ctx->iT, ctx->T, sizeof(ctx->iT));
+#endif
+}
+
+void tf1024_rewind_counter_tctr(tfc1024_ctx *ctx, const void *newctr, size_t ctrsz)
+{
+#ifdef TF_NEED_CTR_BACKUP
+	memcpy(ctx->T, ctx->iT, sizeof(ctx->T));
+#endif
+	if (newctr && ctrsz) ctr_add(ctx->T, newctr, ctrsz > tf_units(ctx->T)
+		? tf_units(ctx->T) : ctrsz);
+}
+#endif
+
+#ifdef TF_NEED_CTR_MODE
 /* CTR mode threefish */
 void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 {
@@ -180,11 +126,11 @@ void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 
 			/* Adjust counter, process data */
 			ctr_inc(ctx->ctr, TF_BLOCK_UNITS);
-			tf1024_encrypt_blk(&ctx->tfs, ctx->ctr, y);
+			tfc1024_encrypt_blk(&ctx->tfc, ctx->ctr, y);
 			for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
 
 			/* Convert from LE if necessary, store result data */
-			data_to_le64(y, sizeof(y));
+			data_to_le64(y, TF_BLOCK_SIZE);
 			memcpy(udst, y, TF_BLOCK_SIZE);
 			udst += TF_BLOCK_SIZE;
 		} while ((sl -= TF_BLOCK_SIZE) >= TF_BLOCK_SIZE);
@@ -197,18 +143,216 @@ void tf1024_crypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
 		data_to_le64(x, TF_BLOCK_SIZE);
 
 		ctr_inc(ctx->ctr, TF_BLOCK_UNITS);
-		tf1024_encrypt_blk(&ctx->tfs, ctx->ctr, y);
+		tfc1024_encrypt_blk(&ctx->tfc, ctx->ctr, y);
 		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
 
 		data_to_le64(y, TF_BLOCK_SIZE);
 		memcpy(udst, y, sl);
 	}
 }
-#endif /* TF_NEED_THREEFISH */
+#endif
+
+
+#ifdef TF_NEED_TCTR_MODE
+/* Tweak CTR mode threefish. */
+void tf1024_tctr_encrypt(tfc1024_ctx *ctx, const void *src, size_t slen, void *dst)
+{
+	const uint8_t *usrc = src;
+	uint8_t *udst = dst;
+	uint64_t x[TF_BLOCK_UNITS], y[TF_BLOCK_UNITS];
+	size_t sl = slen, i;
+
+	if (sl >= TF_BLOCK_SIZE) {
+		do {
+			/* Load src data, convert to LE if necessary */
+			memcpy(x, usrc, TF_BLOCK_SIZE);
+			usrc += TF_BLOCK_SIZE;
+			data_to_le64(x, TF_BLOCK_SIZE);
+
+			/*
+			 * Increment tweak, up to it's full size,
+			 * 192 bits wide counter.
+			 */
+			ctr_inc(ctx->T, tf_units(ctx->T));
+			/* Encrypt plaintext. It's always going to be different. */
+			tfc1024_encrypt_blk(ctx, x, y);
+
+			/* Convert from LE if necessary, store result data */
+			data_to_le64(y, TF_BLOCK_SIZE);
+			memcpy(udst, y, TF_BLOCK_SIZE);
+			udst += TF_BLOCK_SIZE;
+		} while ((sl -= TF_BLOCK_SIZE) >= TF_BLOCK_SIZE);
+	}
+
+	/*
+	 * If there is remaining, then process it partially using plain CTR mode.
+	 * This will automatically become TCTR again if block will be padded by caller.
+	 */
+	if (sl) {
+		memset(x, 0, TF_BLOCK_SIZE);
+		memcpy(x, usrc, sl);
+		data_to_le64(x, TF_BLOCK_SIZE);
+
+		memset(y, 0, TF_BLOCK_SIZE);
+		memcpy(y, ctx->T, sizeof(ctx->T));
+		ctr_inc(y, TF_BLOCK_UNITS);
+		tfc1024_encrypt_blk(ctx, y, y);
+		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
+
+		data_to_le64(y, TF_BLOCK_SIZE);
+		memcpy(udst, y, sl);
+	}
+}
+
+void tf1024_tctr_decrypt(tfc1024_ctx *ctx, const void *src, size_t slen, void *dst)
+{
+	const uint8_t *usrc = src;
+	uint8_t *udst = dst;
+	uint64_t x[TF_BLOCK_UNITS], y[TF_BLOCK_UNITS];
+	size_t sl = slen, i;
+
+	if (sl >= TF_BLOCK_SIZE) {
+		do {
+			/* Load src data, convert to LE if necessary */
+			memcpy(x, usrc, TF_BLOCK_SIZE);
+			usrc += TF_BLOCK_SIZE;
+			data_to_le64(x, TF_BLOCK_SIZE);
+
+			/* Prepare known tweak */
+			ctr_inc(ctx->T, tf_units(ctx->T));
+			/* Decrypt ciphertext */
+			tfc1024_decrypt_blk(ctx, x, y);
+
+			/* Convert from LE if necessary, store result data */
+			data_to_le64(y, TF_BLOCK_SIZE);
+			memcpy(udst, y, TF_BLOCK_SIZE);
+			udst += TF_BLOCK_SIZE;
+		} while ((sl -= TF_BLOCK_SIZE) >= TF_BLOCK_SIZE);
+	}
+
+	/*
+	 * If there is remaining, then process it partially using plain CTR mode.
+	 * This will automatically become TCTR again if block will be padded by caller.
+	 */
+	if (sl) {
+		memset(x, 0, TF_BLOCK_SIZE);
+		memcpy(x, usrc, sl);
+		data_to_le64(x, TF_BLOCK_SIZE);
+
+		memset(y, 0, TF_BLOCK_SIZE);
+		memcpy(y, ctx->T, sizeof(ctx->T));
+		ctr_inc(y, TF_BLOCK_UNITS);
+		tfc1024_encrypt_blk(ctx, y, y);
+		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
+
+		data_to_le64(y, TF_BLOCK_SIZE);
+		memcpy(udst, y, sl);
+	}
+}
+#endif /* TF_NEED_TCTR_MODE */
+
+#ifdef TF_NEED_CBC_MODE
+/* CBC mode threefish. */
+void tf1024_cbc_encrypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
+{
+	const uint8_t *usrc = src;
+	uint8_t *udst = dst;
+	uint64_t x[TF_BLOCK_UNITS], y[TF_BLOCK_UNITS];
+	size_t sl = slen, i;
+
+	if (sl >= TF_BLOCK_SIZE) {
+		do {
+			/* Load src data, convert to LE if necessary */
+			memcpy(x, usrc, TF_BLOCK_SIZE);
+			usrc += TF_BLOCK_SIZE;
+			data_to_le64(x, TF_BLOCK_SIZE);
+
+			/* Add plaintext to IV or previoud block */
+			for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] = x[i] ^ ctx->ctr[i];
+			/* Encrypt result */
+			tfc1024_encrypt_blk(&ctx->tfc, y, x);
+			/* Save result for next block */
+			memcpy(ctx->ctr, x, TF_BLOCK_SIZE);
+
+			/* Convert from LE if necessary, store result data */
+			data_to_le64(x, TF_BLOCK_SIZE);
+			memcpy(udst, x, TF_BLOCK_SIZE);
+			udst += TF_BLOCK_SIZE;
+		} while ((sl -= TF_BLOCK_SIZE) >= TF_BLOCK_SIZE);
+	}
+
+	/*
+	 * If there is remaining, then process it partially using plain CTR mode.
+	 * This will automatically become CBC again if block will be padded by caller.
+	 */
+	if (sl) {
+		memset(x, 0, TF_BLOCK_SIZE);
+		memcpy(x, usrc, sl);
+		data_to_le64(x, TF_BLOCK_SIZE);
+
+		ctr_inc(ctx->ctr, TF_BLOCK_UNITS);
+		tfc1024_encrypt_blk(&ctx->tfc, ctx->ctr, y);
+		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
+
+		data_to_le64(y, TF_BLOCK_SIZE);
+		memcpy(udst, y, sl);
+	}
+}
+
+void tf1024_cbc_decrypt(tf1024_ctx *ctx, const void *src, size_t slen, void *dst)
+{
+	const uint8_t *usrc = src;
+	uint8_t *udst = dst;
+	uint64_t x[TF_BLOCK_UNITS], y[TF_BLOCK_UNITS], t[TF_BLOCK_UNITS];
+	size_t sl = slen, i;
+
+	if (sl >= TF_BLOCK_SIZE) {
+		do {
+			/* Load src data, convert to LE if necessary */
+			memcpy(x, usrc, TF_BLOCK_SIZE);
+			usrc += TF_BLOCK_SIZE;
+			data_to_le64(x, TF_BLOCK_SIZE);
+
+			/* Save temporary */
+			memcpy(t, x, TF_BLOCK_SIZE);
+			/* Decrypt block */
+			tfc1024_decrypt_blk(&ctx->tfc, x, y);
+			/* Remove IV */
+			for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= ctx->ctr[i];
+			/* Save IV for next block */
+			memcpy(ctx->ctr, t, TF_BLOCK_SIZE);
+
+			/* Convert from LE if necessary, store result data */
+			data_to_le64(y, TF_BLOCK_SIZE);
+			memcpy(udst, y, TF_BLOCK_SIZE);
+			udst += TF_BLOCK_SIZE;
+		} while ((sl -= TF_BLOCK_SIZE) >= TF_BLOCK_SIZE);
+	}
+
+	/*
+	 * If there is remaining, then process it partially using plain CTR mode.
+	 * This will automatically become CBC again if block will be padded by caller.
+	 */
+	if (sl) {
+		memset(x, 0, TF_BLOCK_SIZE);
+		memcpy(x, usrc, sl);
+		data_to_le64(x, TF_BLOCK_SIZE);
+
+		ctr_inc(ctx->ctr, TF_BLOCK_UNITS);
+		tfc1024_encrypt_blk(&ctx->tfc, ctx->ctr, y);
+		for (i = 0; i < TF_BLOCK_UNITS; i++) y[i] ^= x[i];
+
+		data_to_le64(y, TF_BLOCK_SIZE);
+		memcpy(udst, y, sl);
+	}
+}
+#endif /* TF_NEED_CBC_MODE */
+#endif /* TF_NEED_MODES */
 
 #define SKEIN_VERSION 1
 #define SKEIN_ID 0x33414853 /* LE: "SHA3" */
 
+#define SKEIN_BLOCK_KEY (0)
 #define SKEIN_BLOCK_CFG ((uint64_t)4 << 56)
 #define SKEIN_BLOCK_MSG ((uint64_t)48 << 56)
 #define SKEIN_BLOCK_OUT ((uint64_t)63 << 56)
@@ -245,23 +389,38 @@ static void sk1024_process_blk(sk1024_ctx *ctx, const uint8_t *in, size_t bnum, 
 	size_t i;
 
 	do {
-		ctx->tfs.T[0] += l;
+		ctx->tfc.T[0] += l;
 
 		skget64lsb(x, in, tf_units(x));
 		in += sizeof(x);
 
-		tfs1024_init(&ctx->tfs);
-		tf1024_encrypt_blk(&ctx->tfs, x, y);
+		tf1024_init_for_skein(&ctx->tfc);
+		tfc1024_encrypt_blk(&ctx->tfc, x, y);
 		for (i = 0; i < TF_BLOCK_UNITS; i++)
-			ctx->tfs.K[i] = y[i] ^ x[i];
+			ctx->tfc.K[i] = y[i] ^ x[i];
 
-		ctx->tfs.T[1] &= ~SKEIN_FLAG_FIRST;
+		ctx->tfc.T[1] &= ~SKEIN_FLAG_FIRST;
 	} while (--bnum);
 }
 
-void sk1024_init(sk1024_ctx *ctx, size_t hbits)
+void sk1024_init_key(sk1024_ctx *ctx, const void *key, size_t klen, size_t hbits)
 {
 	uint64_t cfg[TF_BLOCK_UNITS];
+
+	memset(ctx, 0, sizeof(sk1024_ctx));
+
+	if (key && klen) {
+		ctx->hl = TF_MAX_BITS;
+		ctx->bl = 0;
+		ctx->tfc.T[0] = 0;
+		ctx->tfc.T[1] = SKEIN_BLOCK_KEY | SKEIN_FLAG_FIRST;
+		memset(ctx->tfc.K, 0, sizeof(ctx->tfc.K));
+		sk1024_update(ctx, key, klen);
+		sk1024_final_pad(ctx, (void *)cfg, 1);
+		memcpy(ctx->tfc.K, cfg, sizeof(cfg));
+		data_to_le64(ctx->tfc.K, TF_KEY_SIZE);
+	}
+	else memset(ctx->tfc.K, 0, sizeof(ctx->tfc.K));
 
 	ctx->hl = hbits;
 	ctx->bl = 0;
@@ -270,14 +429,18 @@ void sk1024_init(sk1024_ctx *ctx, size_t hbits)
 	cfg[0] = htole64(((uint64_t) SKEIN_VERSION << 32) + SKEIN_ID);
 	cfg[1] = htole64(hbits);
 
-	ctx->tfs.T[0] = 0;
-	ctx->tfs.T[1] = SKEIN_BLOCK_CFG | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
+	ctx->tfc.T[0] = 0;
+	ctx->tfc.T[1] = SKEIN_BLOCK_CFG | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
 
-	memset(ctx->tfs.K, 0, sizeof(ctx->tfs.K));
 	sk1024_process_blk(ctx, (uint8_t *)cfg, 1, 32);
 
-	ctx->tfs.T[0] = 0;
-	ctx->tfs.T[1] = SKEIN_BLOCK_MSG | SKEIN_FLAG_FIRST;
+	ctx->tfc.T[0] = 0;
+	ctx->tfc.T[1] = SKEIN_BLOCK_MSG | SKEIN_FLAG_FIRST;
+}
+
+void sk1024_init(sk1024_ctx *ctx, size_t hbits)
+{
+	sk1024_init_key(ctx, NULL, 0, hbits);
 }
 
 void sk1024_update(sk1024_ctx *ctx, const void *msg, size_t l)
@@ -312,7 +475,7 @@ void sk1024_update(sk1024_ctx *ctx, const void *msg, size_t l)
 	}
 }
 
-void sk1024_final(sk1024_ctx *ctx, void *outhash)
+void sk1024_final_pad(sk1024_ctx *ctx, void *outhash, short do_pad)
 {
 	uint8_t *hash = outhash;
 	uint64_t key[TF_BLOCK_UNITS];
@@ -320,26 +483,36 @@ void sk1024_final(sk1024_ctx *ctx, void *outhash)
 
 	if (ctx->bl < TF_BLOCK_SIZE)
 		memset(ctx->B + ctx->bl, 0, TF_BLOCK_SIZE - ctx->bl);
-	ctx->tfs.T[1] |= SKEIN_FLAG_LAST;
+	ctx->tfc.T[1] |= SKEIN_FLAG_LAST;
 	sk1024_process_blk(ctx, ctx->B, 1, ctx->bl);
+
+	if (do_pad) {
+		skput64lsb(outhash, ctx->tfc.K, TF_BLOCK_SIZE);
+		return;
+	}
 
 	b = (ctx->hl + 7) / 8;
 
 	memset(ctx->B, 0, sizeof(ctx->B));
-	memcpy(key, ctx->tfs.K, sizeof(key));
+	memcpy(key, ctx->tfc.K, sizeof(key));
 
 	for (i = 0; i * TF_BLOCK_SIZE < b; i++) {
 		((uint64_t *)ctx->B)[0] = htole64((uint64_t)i);
-		ctx->tfs.T[0] = 0;
-		ctx->tfs.T[1] = SKEIN_BLOCK_OUT | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
+		ctx->tfc.T[0] = 0;
+		ctx->tfc.T[1] = SKEIN_BLOCK_OUT | SKEIN_FLAG_FIRST | SKEIN_FLAG_LAST;
 		ctx->bl = 0;
 
 		sk1024_process_blk(ctx, ctx->B, 1, sizeof(uint64_t));
 		n = b - i*TF_BLOCK_SIZE;
 		if (n >= TF_BLOCK_SIZE) n = TF_BLOCK_SIZE;
-		skput64lsb(hash+i*TF_BLOCK_SIZE, ctx->tfs.K, n);
-		memcpy(ctx->tfs.K, key, sizeof(key));
+		skput64lsb(hash+i*TF_BLOCK_SIZE, ctx->tfc.K, n);
+		memcpy(ctx->tfc.K, key, sizeof(key));
 	}
+}
+
+void sk1024_final(sk1024_ctx *ctx, void *outhash)
+{
+	sk1024_final_pad(ctx, outhash, 0);
 }
 
 void sk1024(const void *src, size_t slen, void *dst, size_t hbits)

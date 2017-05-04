@@ -116,7 +116,7 @@ int main(int argc, char **argv)
 		if (read(rsf, buf, blksz) <= 0) fprintf(stderr, "%s: read 0 bytes (wanted %zu)\n", randsrc, blksz);
 		sk1024(buf, blksz, keybuf, 1024);
 		tf1024_init(&tctx);
-		tf1024_set_key(&tctx, keybuf, 1024);
+		tfc1024_set_key(&tctx.tfc, keybuf, 1024);
 		sk1024(keybuf, sizeof(keybuf), counter, 1024);
 		tf1024_start_counter(&tctx, counter);
 		memset(keybuf, 0, TF_KEY_SIZE);
