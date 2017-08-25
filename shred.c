@@ -17,7 +17,7 @@
 static char *progname;
 
 static char *randsrc = "/dev/urandom";
-static int iters = 3, force = 0, rmf = 0, zrf = 0, noround = 0, verb = 0, syncio = 0, alwaysrand = 0;
+static int iters = 3, force = 0, rmf = 0, zrf = 0, noround = 0, verb = 0, syncio = 0, alwaysrand = 0, reqrand = 0;
 
 static char sfbuf[PATH_MAX*2];
 
@@ -25,7 +25,7 @@ static char sfbuf[PATH_MAX*2];
 
 static void usage(void)
 {
-	printf("usage: %s [-rfnuxzsvSRB] FILE FILE ...\n", progname);
+	printf("usage: %s [-rfnuxzsvSRBX] FILE FILE ...\n", progname);
 	printf("wipe & remove files or shred disks\n\n");
 	printf("  -r DEV: random source file\n");
 	printf("  -f: force; try to chmod file if we own it\n");
@@ -37,6 +37,7 @@ static void usage(void)
 	printf("  -R: always overwrite with random bytes\n");
 	printf("  -S: synchronized IO\n");
 	printf("  -B NUM: specify alternative write block size\n");
+	printf("  -X: request first iteration to be random\n");
 	printf("  -v: tell what actually we do\n\n");
 	exit(3);
 }
@@ -57,7 +58,7 @@ int main(int argc, char **argv)
 	ssize_t l, ll, howmany = -1;
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "r:fn:uxzs:vRSB:")) != -1) {
+	while ((c = getopt(argc, argv, "r:fn:uxzs:vRSB:X")) != -1) {
 		switch (c) {
 			case 'r': randsrc = optarg; break;
 			case 'f': force = 1; break;
@@ -70,6 +71,7 @@ int main(int argc, char **argv)
 			case 'R': alwaysrand = 1; break;
 			case 'S': syncio = O_SYNC; break;
 			case 'B': blksz = atol(optarg); break;
+			case 'X': reqrand = 1; break;
 			default: usage(); break;
 		}
 	}
@@ -129,6 +131,9 @@ int main(int argc, char **argv)
 			if (it <= 1 && zrf) {
 				pat = 1;
 				rc = 0;
+			}
+			else if (it == iters && reqrand) {
+				pat = 0;
 			}
 			else if (!alwaysrand) {
 				if (read(rsf, &rc, 1) <= 0) fprintf(stderr, "%s: read 0 bytes (wanted 1)\n", randsrc);
