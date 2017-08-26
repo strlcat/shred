@@ -1,7 +1,3 @@
-/*
- * Embeddable skein and threefish implementation, 1024 bits only
- */
-
 #include <string.h>
 #include "tf1024.h"
 
