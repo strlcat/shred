@@ -361,15 +361,15 @@ static inline void skput64lsb(TF_BYTE_TYPE *dst, const TF_UNIT_TYPE *src, size_t
 	size_t n;
 
 	for (n = 0; n < l; n++)
-		dst[n] = (TF_BYTE_TYPE)(src[n>>3] >> (8*(n&7)));
+		dst[n] = (TF_BYTE_TYPE)(src[n>>3] >> (TF_SIZE_UNIT*(n&7)));
 }
 
 static inline void skget64lsb(TF_UNIT_TYPE *dst, const TF_BYTE_TYPE *src, size_t l)
 {
 	size_t n;
 
-	for (n = 0; n<8*l; n += 8)
-		dst[n/8] = (((TF_UNIT_TYPE)src[n])) +
+	for (n = 0; n<TF_SIZE_UNIT*l; n += TF_SIZE_UNIT)
+		dst[n/TF_SIZE_UNIT] = (((TF_UNIT_TYPE)src[n])) +
 			(((TF_UNIT_TYPE)src[n+1]) << 8) +
 			(((TF_UNIT_TYPE)src[n+2]) << 16) +
 			(((TF_UNIT_TYPE)src[n+3]) << 24) +

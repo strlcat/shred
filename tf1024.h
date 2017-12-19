@@ -41,10 +41,10 @@
 #define TF_BLOCK_SIZE TF_KEY_SIZE /* for byteops - memset, memcpy etc. */
 #define TF_BLOCK_UNITS TF_NR_UNITS /* for TF_UNIT_TYPE ops */
 
-#define TF_TO_BITS(x)   ((x) * TF_SIZE_UNIT) /* nr. bytes to bits (128 -> 1024) */
-#define TF_FROM_BITS(x) ((x) / TF_SIZE_UNIT) /* nr. bits to bytes (1024 -> 128) */
-#define TF_MAX_BITS (TF_BLOCK_SIZE * TF_SIZE_UNIT) /* max. bits supported (128 * 8 == 1024) */
-#define TF_UNIT_BITS (TF_NR_BITS / TF_NR_UNITS) /* number of bits in a single unit */
+#define TF_TO_BITS(x)   ((x) * 8) /* nr. bytes to bits (128 -> 1024) */
+#define TF_FROM_BITS(x) ((x) / 8) /* nr. bits to bytes (1024 -> 128) */
+#define TF_MAX_BITS TF_NR_BITS /* max. bits supported (128 * 8 == 1024) */
+#define TF_UNIT_BITS (TF_SIZE_UNIT * 8) /* number of bits in a single unit */
 
 /* If host is big endian, then do proper conversions. */
 static inline void data_to_little(void *p, size_t l)
