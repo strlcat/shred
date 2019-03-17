@@ -1,3 +1,19 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _BSD_SOURCE
+#define _BSD_SOURCE
+#endif
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+#endif
+#ifndef _LARGEFILE64_SOURCE
+#define _LARGEFILE64_SOURCE
+#endif
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -8,11 +24,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <libgen.h>
+#include "tfdef.h"
+#include "tfe.h"
 
-#ifdef SHRED_FAST64
-#include <time.h>
-#include "tf1024.h"
-#endif
+#define NOSIZE ((size_t)-1)
 
 static char *progname;
 
@@ -20,6 +35,8 @@ static char *randsrc = "/dev/urandom";
 static int iters = 3, force = 0, rmf = 0, zrf = 0, noround = 0, verb = 0, syncio = 0, alwaysrand = 0, reqrand = 0;
 
 static char sfbuf[PATH_MAX*2];
+
+static struct tfe_stream tfe;
 
 #define XRET(x) if (!xret && xret < x) xret = x
 
@@ -44,18 +61,14 @@ static void usage(void)
 
 int main(int argc, char **argv)
 {
-	progname = basename(*argv);
-
 	struct stat st;
 	char *buf, *fname, *s, *d, rc = 0;
 	int c, f, rsf;
-#ifdef SHRED_FAST64
-	tf1024_ctx tctx; memset(&tctx, 0, sizeof(tf1024_ctx));
-	unsigned char keybuf[TF_KEY_SIZE], counter[TF_KEY_SIZE];
-#endif
 	int xret = 0, pat = 0, last = 0, special = 0, it = 0;
 	size_t blksz = 0, x, y;
-	ssize_t l, ll, howmany = -1;
+	size_t l, ll, howmany = NOSIZE;
+
+	progname = basename(*argv);
 
 	opterr = 0;
 	while ((c = getopt(argc, argv, "r:fn:uxzs:vRSB:X")) != -1) {
@@ -114,16 +127,8 @@ int main(int argc, char **argv)
 		}
 		memset(buf, 0, blksz);
 
-#ifdef SHRED_FAST64
 		if (read(rsf, buf, blksz) <= 0) fprintf(stderr, "%s: read 0 bytes (wanted %zu)\n", randsrc, blksz);
-		sk1024(buf, blksz, keybuf, 1024);
-		tf1024_init(&tctx);
-		tfc1024_set_key(&tctx.tfc, keybuf, 1024);
-		sk1024(keybuf, sizeof(keybuf), counter, 1024);
-		tf1024_start_counter(&tctx, counter);
-		memset(keybuf, 0, TF_KEY_SIZE);
-		memset(counter, 0, TF_KEY_SIZE);
-#endif
+		tfe_init(&tfe, buf);
 
 		while (it) {
 			lseek(f, 0L, SEEK_SET);
@@ -148,14 +153,7 @@ int main(int argc, char **argv)
 			}
 
 			while (1) {
-				if (!pat) {
-#ifdef SHRED_FAST64
-					tf1024_crypt(&tctx, buf, blksz, buf);
-#else
-					if (read(rsf, buf, blksz) <= 0)
-						fprintf(stderr, "%s: read 0 bytes (wanted %lu)\n", randsrc, blksz);
-#endif
-				}
+				if (!pat) tfe_emit(buf, blksz, &tfe);
 				else memset(buf, rc, blksz);
 
 				if (l <= blksz && !special) last = 1;
@@ -222,9 +220,8 @@ int main(int argc, char **argv)
 			if (verb) fprintf(stderr, "done away with %s.\n", fname);
 		}
 
-#ifdef SHRED_FAST64
-		tf1024_done(&tctx);
-#endif
+		tfe_emit(NULL, 0, &tfe);
+
 		if (buf && buf != sfbuf) free(buf);
 		if (f != -1) close(f);
 

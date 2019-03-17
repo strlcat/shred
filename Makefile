@@ -1,4 +1,4 @@
-override CFLAGS=-Wall -O2 -DSHRED_FAST64 -D_LARGEFILE64_SOURCE
+override CFLAGS=-Wall -O3
 
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:.c=.o)
