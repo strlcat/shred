@@ -36,7 +36,7 @@ static int iters = 3, force = 0, rmf = 0, zrf = 0, noround = 0, verb = 0, syncio
 
 static char sfbuf[PATH_MAX*2];
 
-static struct tfe_stream tfe;
+static struct tfnge_stream tfnge;
 
 #define XRET(x) if (!xret && xret < x) xret = x
 
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
 		memset(buf, 0, blksz);
 
 		if (read(rsf, buf, blksz) <= 0) fprintf(stderr, "%s: read 0 bytes (wanted %zu)\n", randsrc, blksz);
-		tfe_init(&tfe, buf);
+		tfnge_init(&tfnge, buf);
 
 		while (it) {
 			lseek(f, 0L, SEEK_SET);
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
 			}
 
 			while (1) {
-				if (!pat) tfe_emit(buf, blksz, &tfe);
+				if (!pat) tfnge_emit(buf, blksz, &tfnge);
 				else memset(buf, rc, blksz);
 
 				if (l <= blksz && !special) last = 1;
@@ -220,7 +220,7 @@ int main(int argc, char **argv)
 			if (verb) fprintf(stderr, "done away with %s.\n", fname);
 		}
 
-		tfe_emit(NULL, 0, &tfe);
+		tfnge_emit(NULL, 0, &tfnge);
 
 		if (buf && buf != sfbuf) free(buf);
 		if (f != -1) close(f);
