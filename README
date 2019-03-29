@@ -1,19 +1,15 @@
-simple file and device shredder - very lightweight gnu shred alternative
+shred -- gnu shred(1) tiny stable compatible alternative.
 
-forked from tfcrypt with idea of using Threefish for fast shredding.
+shred is a secure file destroying tool. It will overwrite the condemned file with garbage
+and repeated patterns, and it will decide what to write randomly.
 
-I found this tool useful even before, but it existed only in gnu coreutils, and nowhere else.
-Busybox also missed it, but I did not wanted to install coreutils on my musl sane systems,
-but I was in a need for one and decided to write my own quickly.
-
-It was used for more that three years and it proven to be stable enough.
-
-BUGS:
-- force option (-f) cannot force to overwrite _existing_ file if user does not own it, but
-owns the directory where it resides. This is because common Unix systems lack a sane
-way to transfer ownership of such files to user who owns directory. There is no fix for that.
+This tool exists mainly in gnu coreutils, and nowhere else.
+Busybox also missed it (as of 1.20.1), and I did not wanted to install coreutils on my
+musl systems at the time of writing this one.
+While I do not use a musl based system anymore as of today, I still find this tool useful.
+It is easy to compile and put it to systems which do miss it (for example, Android phones).
 
 LICENSE:
-- Public domain code.
+- Public domain code (incl. tfnoisegen library embedded in).
 
--- ElectroRys, 05Mar2017.
+-- ElectroRys, 29Mar2019.
